@@ -1,0 +1,787 @@
+<!doctype html> <!-- 这就是个网页，直接用浏览器打开就行 -->
+<html lang="zh-CN"> <!-- 页面用中文，后面写中文不会乱 -->
+<head> <!-- 先放页面设置，树还没开始画 -->
+<meta charset="utf-8"> <!-- 中文按 UTF-8 读，别弄成乱码了 -->
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"> <!-- 铺满手机和平板，刘海和底部横条的位置后面单独留 -->
+<meta name="theme-color" content="#000000"> <!-- 浏览器顶栏也用黑色，别在夜空旁边冒一条白边 -->
+<meta name="apple-mobile-web-app-capable" content="yes"> <!-- 加到苹果主屏幕后，可以像一个独立页面那样打开 -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"> <!-- 苹果主屏幕打开时，状态栏透在黑底上 -->
+<meta name="apple-mobile-web-app-title" content="流光圣诞树"> <!-- 加到主屏幕后用这个短名字 -->
+<meta name="color-scheme" content="dark"> <!-- 告诉浏览器，这个页面用深色背景 -->
+<link rel="icon" href="data:,"> <!-- 不用网站小图标，也就不用再找一个图标文件 -->
+<title>流光圣诞树</title> <!-- 手机发给别人时，标签上就叫这个名字 -->
+<style> /* 下面这块管排版和颜色，动画在后面的脚本里 */
+* { box-sizing: border-box; } /* 宽高把边框和内边距也算上，大小比较好控制 */
+html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#000; } /* 页面铺满窗口，去掉白边和滚动条，背景设成黑色 */
+body { display:grid; place-items:center; } /* 先把场景放在页面中间 */
+#scene { position:relative; width: min(100vw, 177.77778vh); /* 这是原版的横屏宽度，后面还有全屏设置会盖掉它 */
+         height:min(100vh, 56.25vw); overflow:hidden; background:#000; } /* 原版高度按 16 比 9 算，多出来的东西藏起来 */
+canvas { position:absolute; inset:0; width:100%; height:100%; display:block; } /* 画布贴住场景四边，树和星星都画在这上面 */
+#greeting { position:absolute; left:8.2%; top:36%; margin:0; /* 先给祝福文字定个位置，后面会改到上方正中 */
+  color:#fff5fa; font:italic 400 clamp(15px, 3.15vw, 5.6vh) / 1.3 /* 文字用偏粉的白色，字号跟着窗口大小变 */
+  "Times New Roman", "Palatino Linotype", Georgia, serif; /* 按顺序找这几个字体，电脑上有哪个就用哪个 */
+  white-space:nowrap; letter-spacing:-.035em; /* 这句话不换行，字之间稍微挤紧一点 */
+  text-shadow:0 0 3px #ffffff35, 0 0 15px #ffb6d22a; /* 给文字加一圈很淡的光 */
+  pointer-events:none; user-select:none; } /* 文字不挡鼠标，也不让拖着选中文字 */
+#error { position:absolute; left:15%; right:15%; top:42%; color:#f8dbe7; /* 报错时把提示放在画面中间附近 */
+  font:16px/1.8 system-ui,sans-serif; text-align:center; white-space:pre-line; } /* 提示文字居中，有换行就照着换行显示 */
+body.idle { cursor:none; } /* 鼠标一会儿不动，就把箭头藏起来 */
+@media (max-aspect-ratio:4/5) { /* 窗口比较窄的时候，用这一套竖屏排版 */
+  #scene { width:100vw; height:100vh; height:100dvh; } /* 竖屏场景直接铺满，dvh 会跟着手机可见高度走 */
+  #greeting { left:50%; top:calc(5% + env(safe-area-inset-top, 0px)); /* 竖屏文字放到上面，顺便给刘海留个位置 */
+    transform:translateX(-50%); font-size:clamp(24px,7.2vw,34px); } /* 往左挪半个文字宽度，这样才是真正居中 */
+} /* 竖屏的这组设置到这里 */
+
+#scene { width:100vw; height:100vh; height:100dvh; touch-action:none; } /* 这里改成全屏，触屏拖动也交给我们自己处理 */
+#greeting { left:50%; top:4%; transform:translateX(-50%); font-style:normal; /* 祝福文字最终放在上方正中，斜体也取消 */
+  font-size:clamp(20px,2.5vw,34px); letter-spacing:.16em; text-transform:uppercase; /* 字号别太大，字间距拉开，英文改成大写 */
+  color:#effaff; text-shadow:0 0 18px #d8f5ff66; } /* 文字换成冰白色，再加一点蓝白的光 */
+.theme-controls { position:absolute; right:22px; top:22px; display:flex; gap:2px; padding:3px; z-index:2; /* 配色按钮合成一小组，放在右上角 */
+  border:1px solid #d9e7ff1a; border-radius:18px; background:#0b111c45; backdrop-filter:blur(12px); } /* 只留一圈很淡的外边，背景稍微透一点 */
+.theme-controls button { display:flex; align-items:center; gap:5px; padding:5px 9px; min-height:26px; /* 按钮比原来小一点，小圆点和文字并排 */
+  color:#dce8f599; background:transparent; border:1px solid transparent; border-radius:14px; cursor:pointer; /* 没选中的颜色淡一点，按钮自己不再画大边框 */
+  font:10px/1.4 system-ui,sans-serif; letter-spacing:.04em; transition:color .25s,background .25s,border-color .25s; /* 字也缩小一点，选中时慢慢亮起来 */
+  -webkit-tap-highlight-color:transparent; } /* 手机点击时不要默认的高亮底色 */
+.theme-controls button::before { content:''; width:4px; height:4px; border-radius:50%; background:var(--swatch); opacity:.7; } /* 文字旁边放一颗小色点，一眼看出配色 */
+#pink-theme { --swatch:#ffc0db; } /* 粉白按钮配一颗淡粉色的小点 */
+#ice-theme { --swatch:#b4deff; } /* 冰蓝按钮配一颗淡蓝色的小点 */
+.theme-controls button:hover { color:#edf5ff; background:#d2e5ff0b; } /* 鼠标放上去时只提亮一点，别抢树的风头 */
+.theme-controls button[aria-pressed="true"] { color:#f2f7ff; background:#c0d7f014; border-color:#d1e6ff1c; } /* 选中的那半边加一层淡底色 */
+.theme-controls button[aria-pressed="true"]::before { opacity:1; box-shadow:0 0 6px var(--swatch); } /* 选中的色点轻轻发光 */
+.theme-controls button:focus-visible { outline:1px solid #d8edff99; outline-offset:2px; } /* 用键盘选按钮时，留个能看清的细圈 */
+@media(max-width:650px) { .theme-controls { top:14px;right:14px; } /* 手机上还是放右上角，往边上收一点 */
+  .theme-controls button { padding:5px 7px; } /* 手机按钮的左右空隙再少一点 */
+  #greeting { top:7%;font-size:21px;letter-spacing:.08em; } } /* 手机标题稍微往下挪，别和配色按钮挤一起 */
+
+html,body { overscroll-behavior:none; -webkit-text-size-adjust:100%; } /* 手指拖树时，别顺带把网页往下拉刷新 */
+#scene { height:100svh; height:100dvh; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; } /* 手机地址栏收起展开都跟着变，不弹长按菜单 */
+#greeting { top:calc(env(safe-area-inset-top,0px) + 24px); font-size:clamp(18px,3vw,28px); } /* 标题绕开刘海，平板上也别太大 */
+.theme-controls { top:calc(env(safe-area-inset-top,0px) + 14px); right:calc(env(safe-area-inset-right,0px) + 14px); } /* 横着拿手机也给摄像头那一边留一点位置 */
+.theme-controls button { min-width:48px; min-height:38px; font-size:11px; padding:7px 9px; } /* 看着仍然小巧，手指实际能点到的地方宽一点 */
+@media(max-width:600px) and (orientation:portrait) { /* 窄竖屏的标题和配色按钮分成两行 */
+  #greeting { top:calc(env(safe-area-inset-top,0px) + 30px); font-size:19px; letter-spacing:.13em; } /* 圣诞字样留在最上面正中 */
+  .theme-controls { top:calc(env(safe-area-inset-top,0px) + 74px); right:50%; transform:translateX(50%); } /* 按钮挪到标题下面，不挤着标题和刘海 */
+} /* 窄竖屏的单独排版到这里 */
+@media(max-height:500px) and (orientation:landscape) { #greeting { top:calc(env(safe-area-inset-top,0px) + 12px);font-size:16px; } } /* 手机横过来时，给树多留点高度 */
+</style> <!-- 样式到这里，下面开始放页面上的东西 -->
+</head> <!-- 页面设置写完了 -->
+<body> <!-- 这里开始是浏览器真正显示的内容 -->
+<main id="scene" aria-label="自动旋转的粉白色三维粒子圣诞树"> <!-- 整个动画场景放这里，这段说明也方便读屏软件识别 -->
+  <canvas id="canvas" aria-label="星尘、爱心、光环与飘落雪花"></canvas> <!-- 这块画布用来画树、星尘、光环和雪花 -->
+  <p id="greeting">Merry Christmas</p> <!-- 上面那句圣诞快乐就是这行字 -->
+  <div id="error" role="alert" hidden></div> <!-- 先把报错位置留着，正常运行时藏起来 -->
+  <div class="theme-controls" aria-label="配色"> <!-- 这块装两个配色按钮 -->
+    <button id="pink-theme" type="button" aria-pressed="false">粉白</button> <!-- 点这个换粉白色，刚开始没有选它 -->
+    <button id="ice-theme" type="button" aria-pressed="true">冰蓝</button> <!-- 点这个换冰蓝色，默认选的就是它 -->
+  </div> <!-- 配色按钮放完了 -->
+</main> <!-- 场景里的东西放完了 -->
+<script> // 下面开始写动画和鼠标操作
+'use strict'; // 用严格模式，有些写错的地方早点报出来
+(() => { // 包一层自己执行的函数，里面的变量不往外乱放
+const canvas = document.getElementById('canvas'); // 先拿到画布，后面靠它画画和接鼠标操作
+const scene = document.getElementById('scene'); // 拿到整个场景，后面要读它的大小
+const errorBox = document.getElementById('error'); // 拿到报错提示的位置
+const pinkButton = document.getElementById('pink-theme'); // 拿到粉白按钮
+const iceButton = document.getElementById('ice-theme'); // 拿到冰蓝按钮
+let targetScatter=0, scatter=0; // targetScatter 是想变到哪儿，scatter 是现在变到哪儿，0 就是树形
+let targetIce=new URLSearchParams(location.search).get('theme')==='ice'?1:0, ice=targetIce; // 手机版先开粉白，地址带 theme=ice 才用冰蓝
+let yaw=0, tilt=0, zoom=1, hover=0, targetHover=0, pointerX=100, pointerY=100; // 先记好旋转、倾斜、缩放和鼠标位置，鼠标坐标暂时放远一点
+let pointerStart=null; // 还没按鼠标，先不记拖动起点
+function toggleScatter() { // 点一下切换聚散，就走这个函数
+  targetScatter=targetScatter?0:1; // 原来是树就改成散开，原来散开就改回树
+  scene.dataset.mode=targetScatter?'scattered':'tree'; // 把当前模式记在页面上，检查起来方便
+} // 聚散状态切换完了，真正的过渡在每帧里做
+function chooseTheme(value) { // 想换配色就调用这里，0 粉白，1 冰蓝
+  targetIce=value; // 先记住要变成哪种颜色
+  pinkButton.setAttribute('aria-pressed',String(value===0)); // 选粉白的时候，把粉白按钮亮起来
+  iceButton.setAttribute('aria-pressed',String(value===1)); // 选冰蓝的时候，把冰蓝按钮亮起来
+  scene.dataset.theme=value?'ice':'pink'; // 把配色名字也记在场景上
+  scene.setAttribute('aria-label',value?'冰蓝流光粒子圣诞树':'粉白流光粒子圣诞树'); // 场景的读屏说明也换成当前颜色
+  canvas.setAttribute('aria-label',value?'流动星尘、星芒、光环与飘雪':'流动星尘、爱心、光环与飘雪'); // 画布说明跟着换，冰蓝是星芒，粉白是爱心
+} // 配色切换的设置到这里
+chooseTheme(targetIce); // 刚打开时，按地址里选好的配色来
+scene.dataset.mode='tree'; // 刚打开时先显示树，不直接散开
+pinkButton.addEventListener('click',()=>chooseTheme(0)); // 粉白按钮点一下，就把目标颜色设成粉白
+iceButton.addEventListener('click',()=>chooseTheme(1)); // 冰蓝按钮点一下，就把目标颜色设成冰蓝
+const fingers=new Map(); // 同时记住每根手指，双指时就不用抢同一个拖动记录
+let pinchDistance=0,pinchZoom=1,multiTouch=false; // 记双指开始时的距离、缩放，还有这次是不是碰过两根手指
+function fingerDistance() { // 两根手指现在离多远，就在这里算
+  const pair=[...fingers.values()]; // 把正在按住的手指取出来
+  return pair.length<2?0:Math.hypot(pair[0].x-pair[1].x,pair[0].y-pair[1].y); // 不足两根先返回 0，够两根再算距离
+} // 双指距离的函数到这里
+canvas.addEventListener('pointerdown',e=>{ // 鼠标和手指按下都从这里开始
+  if(e.button!==0)return; // 只接普通点击，鼠标右键不用管
+  fingers.set(e.pointerId,{x:e.clientX,y:e.clientY}); // 这根手指也加入当前记录
+  canvas.setPointerCapture(e.pointerId); // 手指滑出画布一点也能正常收尾
+  if(fingers.size>1) { // 第二根手指按下就改成缩放手势
+    multiTouch=true;pointerStart=null; // 取消单指拖动，这次最后松开也别触发散开
+    pinchDistance=fingerDistance();pinchZoom=zoom; // 从现在这个距离和大小开始算双指缩放
+    return; // 双指的开始记好了，下面单指那一段不用走
+  } // 双指开始的处理到这里
+  multiTouch=false; // 新的一次单指操作，先清掉上次的双指标记
+  pointerStart={id:e.pointerId,x:e.clientX,y:e.clientY,lastX:e.clientX,lastY:e.clientY,moved:0}; // 记按下位置和每次移动前的位置
+}); // 按下时的处理写完了
+canvas.addEventListener('pointermove',e=>{ // 手指或鼠标移动时走这里
+  const box=canvas.getBoundingClientRect(),aspect=box.width/box.height; // 先看当前画布的大小，横竖屏都按这个换算
+  pointerX=((e.clientX-box.left)/box.width-.5)*8.7*aspect; // 鼠标横坐标换成场景里的大概位置
+  pointerY=(.5-(e.clientY-box.top)/box.height)*8.7+2.78; // 纵坐标也换一下，鼠标靠近仍能推开粒子
+  targetHover=e.pointerType==='touch'?0:1; // 手指不用模拟悬停，免得挡在树上时一直挖个洞
+  if(fingers.has(e.pointerId))fingers.set(e.pointerId,{x:e.clientX,y:e.clientY}); // 更新这一根正在按住的手指
+  if(fingers.size>1) { // 两根手指移动，就只调整树的大小
+    zoom=Math.max(.72,Math.min(1.25,pinchZoom*fingerDistance()/Math.max(pinchDistance,1))); // 放大缩小都留个边界，别一下把树拉飞
+    return; // 缩放时别同时转树
+  } // 双指缩放算完了
+  if(multiTouch || !pointerStart || pointerStart.id!==e.pointerId)return; // 双指剩下一根时先等松开，别突然接成拖动
+  pointerStart.moved=Math.max(pointerStart.moved,Math.hypot(e.clientX-pointerStart.x,e.clientY-pointerStart.y)); // 记住这次最远拖出去多少
+  if(pointerStart.moved>8) { // 手指有一点抖动很正常，超过 8 像素再开始旋转
+    yaw+=(e.clientX-pointerStart.lastX)*.006; // 左右拖就左右转
+    tilt=Math.max(-.24,Math.min(.24,tilt+(e.clientY-pointerStart.lastY)*.0015)); // 上下拖就轻轻倾斜，幅度收住
+  } // 旋转的两个角度算完了
+  pointerStart.lastX=e.clientX;pointerStart.lastY=e.clientY; // 当前坐标留给下次算差值
+}); // 移动的处理到这里
+function endPointer(e,cancelled=false) { // 松手和系统打断共用这段收尾
+  if(!fingers.has(e.pointerId))return; // 没按在画布上的指针不用处理
+  const tap=!cancelled && !multiTouch && fingers.size===1 && pointerStart?.id===e.pointerId && pointerStart.moved<=8; // 真正轻点才散开，拖动和双指都不算
+  fingers.delete(e.pointerId);pointerStart=null; // 松开的那根删掉，单指拖动记录也清掉
+  if(canvas.hasPointerCapture(e.pointerId))canvas.releasePointerCapture(e.pointerId); // 放开这根手指的跟踪
+  if(cancelled)multiTouch=true; // 系统打断后剩余手指也别误触发点击
+  if(!fingers.size){multiTouch=false;pinchDistance=0;} // 全部松开才开始准备下一次手势
+  if(tap)toggleScatter(); // 点一下散开，再点一下聚回树
+} // 手势收尾到这里
+canvas.addEventListener('pointerup',e=>endPointer(e)); // 正常松手时判断是不是轻点
+canvas.addEventListener('pointercancel',e=>{endPointer(e,true);targetHover=0;}); // 系统中断手势时清理，不把它算成点击
+canvas.addEventListener('lostpointercapture',e=>{if(fingers.has(e.pointerId))endPointer(e,true);}); // 浏览器收回跟踪时也清理，免得下一次拖不动
+canvas.addEventListener('pointerleave',()=>{targetHover=0;}); // 鼠标移出去就慢慢收起避让效果
+canvas.addEventListener('wheel',e=>{ // 滚轮滚动时调缩放
+  e.preventDefault();zoom=Math.max(.75,Math.min(1.3,zoom*Math.exp(-e.deltaY*.0006))); // 不让页面跟着滚，只缩放树，范围卡在 0.75 到 1.3 倍
+},{passive:false}); // 这里必须允许拦下默认滚动，所以 passive 设成 false
+document.addEventListener('keydown',e=>{ // 键盘按下时也看一下
+  if(e.code==='Space' && e.target.tagName!=='BUTTON') {e.preventDefault();toggleScatter();} // 按空格就聚散；按钮自己处理空格，这里别再触发一次
+}); // 键盘的处理写完了
+function fail(message) { // 出问题时，用这个函数把提示摆出来
+  errorBox.hidden = false; // 先让报错框显示出来
+  errorBox.textContent = message; // 把具体出了什么问题写进去
+  document.getElementById('greeting').hidden = true; // 报错时先藏掉圣诞快乐，别和提示挤一起
+} // 显示报错的函数到这里
+const gl = canvas.getContext('webgl', { // 跟浏览器要一个 WebGL 画图环境，粒子交给显卡画
+  alpha:false, antialias:false, depth:false, stencil:false, // 背景不透明，不开额外抗锯齿，也不用深度和模板缓冲
+  powerPreference:'high-performance', preserveDrawingBuffer:false // 尽量用性能高的显卡，不要求保留上一帧画面
+}); // 画图环境的设置填完了
+if (!gl) { // 如果浏览器没给我们 WebGL，就没法继续画
+  fail('当前浏览器无法启用 WebGL。\n请用 Microsoft Edge 或 Chrome 打开，并启用图形加速。'); // 告诉你换浏览器或者开图形加速
+  return; // 先停在这里，后面的代码不用跑了
+} // 没拿到 WebGL 的情况处理完了
+
+// 随机数的起点固定住，每次打开树的样子就差不多
+let seed = 20261225; // 这个数就是随机数的起点，换它会换一棵树的细节
+function random() { // 后面要用随机数，都从这里拿
+  seed |= 0; seed = seed + 0x6D2B79F5 | 0; // 先转成 32 位整数，再把种子往前推一步
+  let v = Math.imul(seed ^ seed >>> 15, 1 | seed); // 把这些二进制位打乱，别让结果挨着排队
+  v = v + Math.imul(v ^ v >>> 7, 61 | v) ^ v; // 再打乱一遍，让位置看着散一点
+  return ((v ^ v >>> 14) >>> 0) / 4294967296; // 最后压到 0 到 1 之间，方便后面算位置和颜色
+} // 随机数函数写完了
+const TAU = Math.PI * 2; // 一整圈是 2π，后面转圈都用它
+const mix = (a,b,t) => a+(b-a)*t; // 在 a 和 b 中间按 t 的比例取一个值
+const range = (a,b) => mix(a,b,random()); // 在 a 到 b 之间随便取一个数
+function normal() { // 这个随机数大多靠近 0，偶尔偏远，适合做柔软的散点
+  return Math.sqrt(-2*Math.log(Math.max(random(),1e-8))) * Math.cos(TAU*random()); // 用两个普通随机数算出正态分布，顺便避开 log(0)
+} // 正态随机数的函数到这里
+const points = []; // 所有粒子的数据先装进这个数组
+const counts = {tree:0, ribbon:0, heart:0, ground:0, stars:0, snow:0}; // 各种粒子有多少个，也顺便记一下
+const palette = [ // 先备几种粉白色，树不会全是一个颜色
+  [1,.91,.95], [1,.72,.83], [1,.49,.68], [.98,.96,1], [1,.84,.91] // 这里的红绿蓝都用 0 到 1 表示，越接近 1 越亮
+]; // 粉白色表到这里
+// 一个粒子存 11 个数：位置、颜色、大小、亮度、闪烁起点、速度、类别
+function add(x,y,z,kind,size,brightness,color) { // 往场景里加一个粒子，就调用这个函数
+  const c = color || palette[Math.floor(random()*palette.length)]; // 没指定颜色就从上面那几种里挑一个
+  points.push(x,y,z,c[0],c[1],c[2],size,brightness,random()*TAU,range(.45,1.45),kind); // 把这个粒子的 11 个数按顺序塞进数组，闪烁节奏也各自错开
+} // 加粒子的函数到这里
+
+// 树分七层做，每层都有自己的枝条和散开的细星尘
+const HEIGHT = 5.38; // 树叶主体最高到 5.38，后面再单独补尖尖
+for (let tier=0; tier<7; tier++) { // 从最下面开始，一层一层往上做，共七层
+  const base = .10+tier*.733; // 这一层从多高开始，层间隔大约 0.733
+  const radius = 1.72*Math.pow(1-base/5.63,.88); // 越往上半径越小，树才是下宽上窄的
+  const amount = Math.round(7200-tier*640); // 上层小一些，粒子也跟着少一点
+  const branches = 19; // 每层先安排 19 根枝条
+  const offset = tier*.81; // 每层转开一点角度，别让枝条上下对得太齐
+  for (let i=0; i<amount; i++) { // 先给这一层铺满细小的粒子
+    const u = Math.pow(random(),1.65); // 这一层里的高度偏向下方，底边会比较蓬松
+    const theta = range(0,TAU); // 绕树随机找个方向
+    const edge = radius*Math.pow(1-.84*u,.86); // 高一点的地方，外边缘就收窄一点
+    let r = edge*(random()<.32 ? Math.sqrt(random())*.94 : range(.70,1.065)); // 有的点放里面，有的点靠外，树才有厚度
+    r *= 1+.065*Math.sin(branches*theta+offset)+.040*Math.sin(23*theta-tier); // 半径加点起伏，让边缘有枝条的感觉
+    let y = base + u*.99 - .095*Math.pow(r/radius,2) + normal()*.045; // 算高度，枝条外端稍微垂一点，再撒点随机偏差
+    y = Math.min(y,HEIGHT); // 太高的点压回树叶主体高度以内
+    add(r*Math.cos(theta),y,r*Math.sin(theta),0,range(.49,1.14),range(.32,.79)); // 把半径和角度换成位置，加一个普通树叶粒子，类别 0
+    counts.tree++; // 树上的粒子数加一个
+  } // 这一层的散点铺完了
+  // 再补弯弯的细枝条，末端轻轻垂下来
+  for (let branch=0; branch<branches; branch++) { // 按刚才定好的数量，一根根补枝条
+    for (let i=0; i<135; i++) { // 每根枝条放 135 个细点
+      const t = (i+random())/135; // 沿枝条从根到梢取位置，再稍微错开一点
+      const theta = branch/branches*TAU+offset+.30*t+.060*normal(); // 算这根枝条的方向，往外时带一点弯曲
+      const r = radius*(.20+.84*t)+normal()*.028; // 越接近枝梢，离树中心越远
+      const y = base+.71*Math.pow(1-t,1.22)+.07*Math.sin(t*Math.PI)+normal()*(.024+.033*t); // 算枝条的弧度，外端再散一点，看着不那么直
+      add(r*Math.cos(theta),y,r*Math.sin(theta),0,range(.47,.98),range(.48,.94)); // 在这根枝条上放一个比较亮的细点
+      counts.tree++; // 树上的粒子数再加一个
+    } // 这一根枝条画完了
+  } // 这一层的枝条都补完了
+  // 枝梢再撒点星尘，边缘别光秃秃一条线
+  for (let i=0; i<1150; i++) { // 每层枝梢额外补 1150 个点
+    const branch=Math.floor(random()*branches); // 随便挑一根枝条来补
+    const t=range(.64,1.07); // 主要挑枝条靠外的那一截
+    const theta=branch/branches*TAU+offset+.30*t+normal()*.08; // 沿这根枝条找方向，再往旁边散一点
+    const r=radius*(.20+.82*t)+normal()*.048; // 算离树中心多远，边缘留点松散的感觉
+    const y=base+.71*Math.pow(Math.max(0,1-t),1.22)+normal()*.066; // 算枝梢的高度，别让负数去做小数次幂
+    add(r*Math.cos(theta),y,r*Math.sin(theta),0,range(.48,1.12),range(.47,.92), // 把枝梢粒子的位置、大小和亮度传进去
+        random()<.65?[1,.85,.92]:[1,.57,.76]); // 颜色大多用浅粉白，少量用更明显的粉色
+    counts.tree++; // 枝梢这个点也算在树粒子里
+  } // 这一层的枝梢补完了
+} // 七层树叶都做完了
+// 最上面单独补一个细尖，接住树顶的爱心或星芒
+for (let i=0; i<1500; i++) { // 用 1500 个点补树尖
+  const y = range(4.82,5.46); // 树尖的点只放在最上面这一小段
+  const r = .25*Math.pow((5.48-y)/.66,1.15)*Math.sqrt(random()); // 越高越细，到顶端慢慢收住
+  const a = range(0,TAU); // 在树尖周围随便挑个方向
+  add(r*Math.cos(a),y,r*Math.sin(a),0,range(.4,.8),range(.4,.8)); // 加一个小一点的树尖粒子
+  counts.tree++; // 树粒子计数加一个
+} // 树尖补完了
+
+// 绕树做一条真正在三维空间里的螺旋光带
+for (let i=0; i<10500; i++) { // 光带一共放 10500 个点
+  const t = random(); // 随便取光带从下到上的一段位置
+  const y = .13+t*5.18+normal()*.075; // 算这一点的高度，再让边缘散一点
+  const angle = t*TAU*4.15+.72+.055*Math.sin(t*TAU*9)+normal()*.082; // 从下往上绕大约 4.15 圈，中间加点小摆动
+  const r = 1.75*Math.pow(1-t*.966,.92)+normal()*.048; // 光带半径跟着树形往上收，小偏差让它别太整齐
+  add(r*Math.cos(angle),y,r*Math.sin(angle),1,range(.52,1.12),range(.48,.88), // 加一个光带粒子，类别 1，大小和亮度各自有点差别
+      random()<.64 ? [1,.89,.94] : [1,.56,.73]); // 光带颜色大多浅粉白，少量深粉色
+  counts.ribbon++; // 光带粒子数加一个
+} // 螺旋光带放完了
+
+// 再放几颗亮一点的星点，闪烁时更显眼
+for (let i=0; i<230; i++) { // 这种亮点不用太多，放 230 个就行
+  const t=random(), y=.15+t*5.18, a=range(0,TAU); // 随机选高度和绕树的方向
+  const r=1.72*Math.pow(1-t,.9)*range(.72,1.03); // 让亮点靠着树身，别飘太远
+  add(r*Math.cos(a),y,r*Math.sin(a),0,range(1.0,1.68),range(.80,1.18),[1,.94,.98]); // 亮点比普通星尘大一点，颜色也更接近白色
+  counts.tree++; // 亮点也算树上的粒子
+} // 亮点放完了
+
+// 树顶先做粉色爱心，冰蓝时会在显卡里变成星芒
+// 爱心前后留点厚度，转到侧面也能看见
+for (let i=0; i<4600; i++) { // 爱心一共用 4600 个点
+  const t=range(0,TAU); // 在爱心轮廓上随便取个角度
+  const rim = i<1000; // 前 1000 个点专门拿来勾边
+  const q = rim ? range(.92,1) : Math.sqrt(random()); // 勾边的点靠外，其余点填在爱心里面
+  const hx = 16*Math.pow(Math.sin(t),3)/18; // 爱心轮廓的左右位置，用这个常见的心形公式算
+  const hy = (13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t))/18; // 爱心轮廓的上下位置，也是同一套心形公式
+  const thickness = .17*Math.sqrt(Math.max(0,1-q*q))*(random()<.5 ? -1:1); // 中间厚一点，边缘薄一点，再随机放前面或后面
+  add(hx*q*.32+normal()*.003, 5.88+hy*q*.34, // 爱心缩到合适大小，中心放在树尖上方 5.88 的位置
+      thickness+normal()*.006,2,range(.46,.91),rim?range(.8,1.1):range(.65,.95), // 补上前后厚度和细微偏差，类别 2，边缘稍微亮一些
+      rim ? [1,.72,.86] : [1,.94,.98]); // 爱心边缘偏粉，里面偏白
+  counts.heart++; // 爱心粒子数加一个
+} // 爱心的初始形状做完了
+
+// 地上铺一层星尘，再加四圈光环
+for (let i=0; i<41000; i++) { // 先试着撒 41000 个地面点，太靠外的会筛掉一部分
+  const radius=7.5*Math.sqrt(random()); // 半径开平方，让圆盘里的点不要全挤在中心
+  if (random()>Math.pow(1-radius/8.1,.67)) continue; // 越靠边越容易跳过，这样地面边缘会慢慢变稀
+  const a=range(0,TAU); // 在地面圆盘里随便挑个方向
+  add(radius*Math.cos(a),-.10+normal()*.025,radius*Math.sin(a),3, // 地面放在树底略下面一点，类别 3，再给一点高低差
+      range(.43,1.04),range(.28,.72),random()<.8?[.91,.94,1]:[1,.78,.88]); // 大部分用银白色，少量带粉色，亮度别全一样
+  counts.ground++; // 地面粒子数加一个
+} // 地面散点铺完了
+for (const [ring,radius] of [1.86,2.66,3.66,4.76].entries()) { // 四圈光环从里到外放在这几个半径上
+  const n=4400+ring*390; // 外圈长一点，就多给它一些点
+  for (let i=0;i<n;i++) { // 开始给当前这一圈放点
+    const a=range(0,TAU); // 在这一圈里随便找个角度
+    const r=radius+normal()*(.043+ring*.016); // 半径抖一点，外圈可以更宽松一些
+    add(r*Math.cos(a),-.07+normal()*.016,r*Math.sin(a),3, // 把光环点放在离地面很近的地方
+        range(.45,1.03),range(.44,.88),random()<.83?[.91,.94,1]:[1,.74,.86]); // 光环比底下散点亮一点，主色还是银白
+    counts.ground++; // 光环点也算地面粒子
+  } // 这一圈放完了
+} // 四圈都放完了
+// 光环旁边再加点稍微浮起来的星尘
+for (let i=0;i<850;i++) { // 这些浮起来的点放 850 个
+  const a=range(0,TAU), r=range(1.7,5.0); // 在光环附近挑角度和半径
+  add(r*Math.cos(a),range(-.03,.35),r*Math.sin(a),3,range(.65,1.25),range(.35,.8),[1,.91,.97]); // 高度有一点点差别，像从地上轻轻浮起来
+  counts.ground++; // 这些也记在地面粒子里
+} // 光环旁边的浮点补完了
+
+// 远处再放一些星星，离得远，看着就小
+for (let i=0;i<1000;i++) { // 小屏幕别挤太多远星，给黑色夜空留一点空隙
+  add(range(-14,14),range(-2,13),range(-15,-3.5),4, // 星星放在树后面，左右和上下范围都放宽一点，类别 4
+      range(.54,1.34),range(.20,.65),random()<.8?[.88,.92,1]:[1,.75,.85]); // 大小和亮度各不一样，颜色以冷白为主
+  counts.stars++; // 背景星星计数加一个
+} // 背景星星放完了
+// 雪花分远中近三层，近处少一点，别挡住整棵树
+// 雪花的 x、y 存屏幕位置，z 存离镜头多远，和树的坐标用法不一样
+for (let i=0;i<1000;i++) { // 飘雪保留轻盈的一层，别在小屏上变成满屏白点
+  const layer=random(); // 先抽一个数，看看这片雪花放哪一层
+  const near=layer<.035; // 只有大约 3.5% 的雪花放很近
+  const far=layer>.43; // 大于 0.43 的放远处，其余放中间
+  const depth=near?range(4.5,7.0):far?range(14,25):range(8,14); // 给远中近各自选一个距离范围
+  add(range(-1.1,1.1),range(-1.18,1.18),depth,5, // 雪花在屏幕四周也留一点位置，类别 5，飘进来时不会露馅
+      near?range(1.6,3.0):far?range(.67,1.20):range(.72,1.48), // 近处雪花画大一点，远处画小一点
+      near?range(.24,.48):far?range(.30,.64):range(.40,.82),[.98,.97,1]); // 近处雪花淡一点，免得大片白光挡住树
+  counts.snow++; // 雪花数量加一个
+} // 所有雪花的初始位置放完了
+
+const vertexSource = ` // 下面这段是给显卡跑的，主要算每个粒子去哪儿、画多大
+precision highp float; // 位置计算用高精度，细小的星尘动起来不容易抖
+attribute vec3 aPosition; // 读进这个粒子原来的三维位置
+attribute vec3 aColor; // 读进这个粒子原来的红绿蓝颜色
+attribute float aSize; // 读进这个粒子的大小
+attribute float aBrightness; // 读进这个粒子的基础亮度
+attribute float aPhase; // 读进它自己的闪烁起点，别大家一起亮一起暗
+attribute float aSpeed; // 读进它自己的闪烁速度
+attribute float aKind; // 读进类别，分清树叶、光带、爱心、地面、星星和雪花
+uniform float uTime; // 当前动画走了多少秒，脚本每帧会传进来
+uniform float uAspect; // 当前画布有多宽多高，用来防止画面被拉扁
+uniform float uScale; // 粒子大小随画布分辨率一起调整
+uniform float uMaxSize; // 显卡允许把一个点画多大，不能超过它
+uniform float uPortrait; // 是不是竖屏，0 横屏，1 竖屏
+uniform float uScatter; // 聚散到哪一步了，0 树形，1 星云
+uniform float uIce; // 配色切到哪一步了，0 粉白，1 冰蓝
+uniform float uYaw; // 鼠标左右拖出来的旋转角度
+uniform float uTilt; // 鼠标上下拖出来的倾斜角度
+uniform float uZoom; // 滚轮调出来的缩放倍数
+uniform float uHover; // 鼠标推开粒子的效果现在有多强
+uniform vec2 uPointer; // 鼠标大概在树的哪个位置
+varying vec3 vColor; // 算好的颜色传给后面负责画小光点的那段程序
+varying float vAlpha; // 算好的亮度也传过去
+varying float vSoft; // 这个点要不要画得虚一点，近处雪花会用上
+varying float vSpark; // 这个点要不要加十字小星芒
+varying float vTree; // 留一个树粒子标记，当前片元程序没用到它
+const float PI = 3.14159265359; // 显卡这边也备一个 π，转圈要用
+void main() { // 每个粒子的计算从这里开始
+  vec3 p=aPosition; // 先复制原始位置，后面就在这个副本上改
+  bool tree=aKind<2.5; // 类别 0、1、2 都跟着整棵树走
+  bool stream=aKind<.5 && fract(aSpeed*71.7)<.06; // 从普通树叶里挑大约 6% 的点，专门做向上流动的星尘
+  if(tree) { // 先只让树身、光带和树顶这些点动
+    // 先轻轻晃动每个点，树形还在，但不会僵着不动
+    float wave=uTime*.75+aPhase; // 给每个点一个错开的摆动节奏
+    p.x+=.042*sin(wave*1.13+p.y*2.1); // 左右轻轻晃一点，高度不同，晃法也不同
+    p.z+=.045*cos(wave*.91+p.y*1.7); // 前后也轻轻晃一点，别只在一个平面上动
+    p.y+=.032*sin(wave+p.x*2.0); // 上下再浮一点，幅度不要太大
+    p.xz*=1.0+.010*sin(uTime*.8+p.y*1.6); // 整体再轻轻收放一点，像在慢慢呼吸
+    if(stream) { // 被挑中做流动星尘的点，单独算路线
+      float t=fract(aPosition.y/5.46+uTime*.065+aPhase); // 沿树往上走，到顶后回到底部，fract 只留小数部分
+      float radius=1.8*pow(1.0-t,.92)+.025*sin(aPhase); // 越往上半径越小，沿着树的外形收上去
+      float flowAngle=t*2.0*PI*4.2+uTime*.22+aPhase*.08; // 一边往上一边绕圈，速度和枝叶自己的旋转错开
+      p=vec3(cos(flowAngle)*radius,t*5.42,sin(flowAngle)*radius); // 用刚才的高度、半径和角度换出新位置
+    } // 向上流动这部分算完了
+    if(aKind>1.5) { // 树顶的爱心粒子再单独处理一下
+      float beat=1.0+.045*sin(uTime*2.25); // 让树顶稍微一大一小，像轻轻跳动
+      p=vec3(p.x*beat,5.88+(p.y-5.88)*beat,p.z*beat); // 围着爱心自己的中心缩放，不是围着树根缩放
+      float ray=floor(aPhase/(2.0*PI)*16.0); // 把树顶粒子分给 16 条星芒
+      float rayAngle=ray*(2.0*PI/16.0)+uTime*.035; // 算每条星芒的方向，再让它慢慢转一点
+      float rayLength=(.06+.43*fract(aSpeed*97.3))*mix(1.0,.63,mod(ray,2.0)); // 星芒长短交错，每个点沿自己的那条光线散开
+      vec3 star=vec3(cos(rayAngle)*rayLength,5.88+sin(rayAngle)*rayLength,p.z*.2); // 算出冰蓝星芒的位置，前后厚度压薄一点
+      p=mix(p,star,uIce); // 粉色保留爱心，冰蓝变星芒，中间慢慢过渡
+    } // 树顶的形状算完了
+  } // 树上的小幅摆动算完了
+  if(aKind>2.5 && aKind<3.5) p.y+=.035*sin(length(p.xz)*3.3-uTime*1.3+aPhase*.08); // 地面星尘按半径轻轻起伏，看着有一圈圈流动的感觉
+  float angle=tree ? uTime*(2.0*PI/26.0)-.55 : (aKind<3.5 ? uTime*.018 : 0.0); // 树大约 26 秒转一圈，地面转得更慢，背景不跟着转
+  if(aKind>.5 && aKind<1.5) angle+=uTime*.13; // 光带再多转一点，和树叶错开速度
+  if(aKind<3.5)angle+=uYaw; // 树和地面都加上鼠标拖出来的角度
+  if(aKind>1.5 && aKind<2.5)angle*=1.0-uIce; // 冰蓝星芒不跟着树侧转，免得转到侧面只剩一条线
+  if(tree) { // 整棵树散开时，每个点要有自己的星云位置
+    // 每个点都认准自己的落点，过渡时不会每帧乱跳
+    float seed=fract(sin(aPhase*137.3+aSpeed*78.2)*43758.5453); // 用已有的相位和速度，算一个固定的分散数
+    float radius=.25+sqrt(seed)*4.6; // 算它散开后离星云中心多远
+    float seed2=fract(sin(aPhase*93.7+aSpeed*217.1)*28371.491); // 再算一个数，用来打散星云里的角度
+    float seed3=fract(sin(aPhase*331.3+aSpeed*47.9)*17391.817); // 再算一个数，用来给星云加一点厚度
+    float arm=floor(fract(aSpeed*53.7)*4.0)*PI*.5+radius*1.05+(seed2-.5)*1.25+uTime*.085+uYaw; // 分成四条弯弯的旋臂，沿半径卷起来，也能跟着鼠标转
+    float cloudY=2.7+sin(arm)*radius*.55+(seed3-.5)*.35+.10*sin(aPhase+uTime*.3); // 星云斜着朝向镜头，再加一点厚度和轻微起伏
+    vec3 galaxy=vec3(cos(arm)*radius,cloudY,sin(arm)*radius*.60+(seed3-.5)*.30); // 把星云里这个点的三维位置拼出来
+    // 抵消后面树的侧转，免得星云转着转着又缩成一条线
+    float gc=cos(angle),gs=sin(angle); // 先算树的旋转角度对应的正弦和余弦
+    galaxy.xz=mat2(gc,gs,-gs,gc)*galaxy.xz; // 提前往反方向转一下，后面再转回来就抵消了
+    float morph=smoothstep(0.0,1.0,uScatter); // 把聚散进度磨平一点，开始和结尾别突然一顿
+    p=mix(p,galaxy,morph); // 在原来的树形位置和星云位置中间慢慢挪
+  } // 散开后的位置算完了
+  if(aKind<3.5) { // 树和地面按各自的角度转，背景就不动了
+    float c=cos(angle), s=sin(angle); // 把正弦和余弦先算好
+    p.xz=mat2(c,-s,s,c)*p.xz; // 在水平面里转一下，也就是绕树的竖轴旋转
+  } // 水平旋转算完了
+  if(aKind<3.5) { // 再给树和地面加上鼠标上下拖的倾斜
+    vec2 yz=p.yz-vec2(2.78,0.0); // 先把倾斜中心挪到树身中间附近
+    p.yz=mat2(cos(uTilt),-sin(uTilt),sin(uTilt),cos(uTilt))*yz+vec2(2.78,0.0); // 绕这个中心轻轻倾斜，再把位置挪回去
+  } // 上下倾斜算完了
+  if(tree) { // 鼠标靠近时，只推开树上的点
+    vec2 difference=p.xy-uPointer; // 看看这个点离鼠标的方向和距离
+    float field=exp(-dot(difference,difference)*2.8)*uHover*.22; // 越近推得越明显，离远了基本不受影响
+    p.xy+=normalize(difference+vec2(.0001))*field; // 朝远离鼠标的方向挪一点，小偏移避免零向量没法取方向
+    p.z+=field*.35; // 前后也挪一点，让避让看着有点厚度
+  } // 鼠标推开的效果算完了
+  if(aKind>2.5 && aKind<3.5)p.x*=mix(1.0,min(1.0,uAspect),uPortrait); // 手机竖屏把地面光环横向收进来，尽量留住完整的外圈
+  if(tree)p.x*=mix(1.0,min(1.0,uAspect/.90),uPortrait*smoothstep(0.0,1.0,uScatter)); // 散开后的星河也收进窄屏，别只剩中间一小截
+  vec3 relative=p-mix(vec3(0.0,2.78,0.0),vec3(0.0,2.95,0.0),uPortrait); // 镜头还是对着树身中间，竖屏稍微往上看一点
+  float cp=mix(.974794,.988686,uPortrait), sp=mix(.223106,.150000,uPortrait); // 算镜头俯视的角度，竖屏和横屏稍有不同
+  float cameraDistance=mix(11.0,18.3,uPortrait)/uZoom; // 竖屏把镜头拉远一点，树顶别贴着上面的按钮
+  float viewY=relative.y*cp-relative.z*sp; // 算这个点在镜头里有多高
+  float depth=cameraDistance-relative.y*sp-relative.z*cp; // 算这个点离镜头多远，后面透视要用
+  float focal=mix(2.54,min(3.70,uAspect*7.7),uPortrait); // 算镜头的放大程度，窄屏要照顾一下横向空间
+  gl_Position=vec4(relative.x*focal/uAspect,viewY*focal,depth*.98-.2,depth); // 把三维位置投到屏幕上，最后由显卡按 depth 做透视除法
+  if(aKind>4.5) { // 雪花的位置算法和树不一样，单独来
+    depth=aPosition.z; // 雪花原来存的 z 就是离镜头多远
+    float speed=.020+.105/depth+.017*(.5+.5*sin(aPhase)); // 近处落快一点，远处慢一点，再让各片速度稍有差别
+    float fallingY=1.20-mod(1.20-aPosition.y+uTime*speed,2.40); // 往下落，出了底边就绕回上面继续落
+    float drift=(.020+.16/depth)*sin(uTime*.24+aPhase)+.010*sin(uTime*.53+aPhase*1.7); // 左右轻轻飘，近处飘得更明显一点
+    gl_Position=vec4((aPosition.x+drift)*depth,fallingY*depth,depth*.98-.2,depth); // 雪花直接按屏幕位置放，不跟着树的镜头转
+  } // 雪花的位置算完了
+  float perspective=(aKind>4.5?11.0:cameraDistance)/max(depth,1.0); // 根据距离调整点的大小，近大远小
+  gl_PointSize=clamp(aSize*uScale*6.8*perspective,1.0,uMaxSize); // 算最终画几个像素大，最小 1 像素，最大不能超过显卡限制
+  float twinkle=.76+.24*sin(uTime*aSpeed+aPhase)*sin(uTime*aSpeed*.37+aPhase*2.31); // 两个慢节奏叠起来闪，别一闪一闪太整齐
+  float alpha=aBrightness*twinkle; // 用基础亮度乘上这次闪烁的亮度
+  if(tree)alpha*=1.0+.12*uScatter; // 散开时给树粒子稍微提亮一点
+  if(stream)alpha*=1.4; // 向上游走的那部分再亮一点，才能看出流动
+  if(aKind>.5 && aKind<1.5)alpha*=.75+.55*pow(.5+.5*sin(aPosition.y*3.0-uTime*2.0),3.0); // 光带的亮处沿高度移动，像一束光在往上走
+  if(tree) { // 树上的点再分一下前后亮度
+    // 后面的点暗一点，前面的亮一点，树才有前后层次
+    float r=length(p.xz); // 看这个点离树轴多远
+    float front=smoothstep(-.8,.9,p.z/max(r,.18)); // 粗略判断它在树的前面还是后面
+    alpha*=mix(.40,1.12,front); // 后面压暗，前面保留亮度
+    if(aKind<1.5) { // 树叶和光带还得控制一下上下亮度
+      // 顶端点挤得密，别让它们叠成一片白
+      float height=clamp(p.y/5.46,0.0,1.0); // 把当前高度换成 0 到 1 的比例
+      alpha*=.70*(1.0-.50*pow(height,1.2)); // 越往上越压一点亮度
+      // 树尖和树底额外收一点亮度，中间不用压太多
+      float tipOverlap=smoothstep(3.65,5.25,p.y); // 算这个点有多靠近树尖
+      float lowerOverlap=1.0-smoothstep(.50,1.55,p.y); // 算这个点有多靠近树底
+      alpha*=1.0-.14*tipOverlap-.12*lowerOverlap; // 根据刚才两个范围，少减一点亮度
+    } else alpha*=.53*(.94+.06*sin(uTime*.8)); // 树顶装饰单独压一下亮度，再带一点缓慢呼吸
+  } // 树的前后和上下亮度处理完了
+  if(aKind>2.5 && aKind<3.5) { // 地面上的点也让亮度流动起来
+    alpha*=.86+.14*sin(atan(p.z,p.x)*3.0-uTime*.32+aPhase*.12); // 亮的地方绕着圆盘慢慢转，每个点再错开一点
+    alpha*=1.0-smoothstep(5.4,7.7,length(p.xz)); // 太远的地面点慢慢变淡，别截出硬边
+    // 内圈和远侧都暗一点，给树身留点位置
+    float groundRadius=length(p.xz); // 看这个地面点离中心多远
+    float innerRing=mix(.85,1.0,smoothstep(1.65,3.4,groundRadius)); // 内圈压一点，外圈保留多一点亮度
+    float groundDistance=mix(.88,1.0,smoothstep(-3.0,2.0,p.z)); // 离镜头远的那一侧再暗一点
+    alpha*=.88*innerRing*groundDistance; // 把地面的几个亮度系数一起乘上
+  } // 地面亮度处理完了
+  if(aKind>3.5) alpha*=.95; // 手机版的背景亮度压一点，树和细光带会更清楚
+  // 原版给文字附近留过一块暗区，这里也保留着
+  vec2 ndc=gl_Position.xy/depth; // 先得到屏幕上的标准坐标
+  vec2 screen=ndc*.5+.5; // 再把范围从负 1 到 1 换成 0 到 1
+  if(aKind>3.5) { // 这块只处理背景星星和雪花
+    float textMask=smoothstep(.055,.085,screen.x)*(1.0-smoothstep(.33,.39,screen.x))* // 先圈出原版横屏文字区域的左右范围
+      smoothstep(.55,.59,screen.y)*(1.0-smoothstep(.65,.69,screen.y)); // 再圈出它的上下范围，边缘是渐变的
+    float portraitMask=smoothstep(.10,.18,screen.x)*(1.0-smoothstep(.82,.90,screen.x))* // 竖屏文字在上面，另算一块左右范围
+      smoothstep(.86,.90,screen.y)*(1.0-smoothstep(.96,.99,screen.y)); // 再给竖屏这块补上上下范围
+    textMask=mix(textMask,portraitMask,uPortrait); // 根据横屏或竖屏，选对应的文字区域
+    alpha*=1.0-.58*textMask; // 区域里的星星雪花淡一点，字比较容易看清
+  } // 文字附近的亮度处理完了
+  vColor=aColor; // 先用这个点原来的颜色
+  if(tree) { // 树上的点再分一下前后颜色
+    float front=smoothstep(-.6,.8,p.z/max(length(p.xz),.18)); // 看它有多靠前
+    vColor=mix(aColor*vec3(1.0,.70,.84),aColor,front); // 后面带点深粉，前面接近原来的浅色
+  } // 树的前后颜色分完了
+  vec3 iceColor=vec3(.50+.35*aColor.g,.76+.20*aColor.g,1.0); // 算对应的冰蓝色，保留原来颜色的一点差别
+  vColor=mix(vColor,iceColor,uIce); // 从粉白慢慢混到冰蓝，别一下子跳色
+  vAlpha=alpha; // 把亮度交给后面的片元程序
+  vSoft=(aKind>4.5 && depth<7.0)?1.0:0.0; // 近处雪花画虚一点，其他点保持清楚
+  vSpark=(aSize>1.25 && aKind<2.5)?1.0:0.0; // 树上比较大的亮点才加十字星芒
+  vTree=tree?1.0:0.0; // 顺手传一下是不是树粒子，目前后面没用它
+}`; // 每个粒子的位置和外观参数算到这里，这段显卡代码结束
+const fragmentSource = ` // 下面这段负责把一个粒子的小方块画成发光的小圆点
+precision mediump float; // 这里算颜色用中等精度就够了
+varying vec3 vColor; // 接收前面算好的颜色
+varying float vAlpha; // 接收前面算好的亮度
+varying float vSoft; // 接收要不要画虚一点的标记
+varying float vSpark; // 接收要不要画十字星芒的标记
+void main() { // 一个小光点里面，每个像素从这里算颜色
+  vec2 p=gl_PointCoord*2.0-1.0; // 把小方块坐标改成以中心为 0 的范围
+  float r2=dot(p,p); // 算这个像素离小光点中心多远，用距离平方就够了
+  if(r2>1.0) discard; // 圆外面直接不画，不要露出方块边角
+  float core=exp(-r2*32.0); // 中心做得小而亮，往外很快变暗
+  float halo=exp(-r2*6.0)*.12; // 外面再铺一点淡淡的光晕
+  float rays=exp(-abs(p.x)*48.0-abs(p.y)*6.0)+ // 先算竖着的那条细光线
+             exp(-abs(p.y)*48.0-abs(p.x)*6.0); // 再加横着的一条，合起来就是十字小星芒
+  float intensity=mix(core+halo,exp(-r2*6.5)*.19,vSoft)+rays*vSpark*.13; // 普通星尘保留亮芯，近处雪花变软，亮点再叠上星芒
+  vec3 color=mix(vColor,vec3(1.0),core*.45); // 小光点的最中心往白色靠一点
+  gl_FragColor=vec4(color,min(intensity*vAlpha*1.75,1.0)); // 输出颜色和透明度，亮度最多到 1
+}`; // 小光点的显卡画法写完了
+
+function compile(type,source) { // 把刚才写的显卡代码交给浏览器编译
+  const shader=gl.createShader(type); // 按顶点或片元类型，新建一段着色器
+  gl.shaderSource(shader,source); // 把代码文本放进去
+  gl.compileShader(shader); // 让显卡驱动编译它
+  if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS)) { // 看看编译有没有成功
+    const message=gl.getShaderInfoLog(shader); // 没成功就拿到具体报错
+    gl.deleteShader(shader); // 这段不能用的着色器删掉，别占着资源
+    throw new Error(message); // 把错误抛出去，外面会显示提示
+  } // 编译失败的处理到这里
+  return shader; // 编好了就把它交回去用
+} // 编译函数写完了
+let program; // 先留一个位置，装画粒子用的显卡程序
+try { // 初始化有可能失败，先用 try 接住
+  program=gl.createProgram(); // 新建一个显卡程序
+  const vert=compile(gl.VERTEX_SHADER,vertexSource); // 编译负责算粒子位置的那段代码
+  const frag=compile(gl.FRAGMENT_SHADER,fragmentSource); // 编译负责画小光点的那段代码
+  gl.attachShader(program,vert); gl.attachShader(program,frag); // 把两段都装到这个程序里
+  gl.bindAttribLocation(program,0,'aPosition'); // 让位置数据固定走第 0 号属性入口
+  gl.linkProgram(program); // 把两段代码接起来，变成能用的程序
+  gl.deleteShader(vert); gl.deleteShader(frag); // 接好以后，这两段单独的着色器对象就可以释放了
+  if(!gl.getProgramParameter(program,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program)); // 接起来也可能失败，失败就带着错误停下来
+} catch(error) { // 初始化出错时走这里
+  console.error(error); // 把原始错误留在控制台，排查时能看到
+  fail('图形初始化失败。请更新浏览器或启用图形加速。\n'+error.message); // 页面上也给一个能看懂的提示
+  return; // 初始化失败就不往下画了
+} // 这段初始化到这里
+gl.useProgram(program); // 先选中画粒子的程序
+const buffer=gl.createBuffer(); // 新建一块显卡缓冲区，装所有粒子数据
+gl.bindBuffer(gl.ARRAY_BUFFER,buffer); // 选中这块缓冲区，接下来往里面放数据
+const total=points.length/11; // 一个粒子 11 个数，除一下就知道总共有多少粒子
+const particleData=new Float32Array(points); // 换成显卡能直接读的 32 位小数数组
+points.length=0; // 普通数组的数据用完就清掉，少占一份内存
+const mobileDevice=matchMedia('(pointer:coarse)').matches || /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || // iPad 就算报桌面浏览器，也能从触摸方式认出来
+  (Math.min(innerWidth,innerHeight)<=700 && (devicePixelRatio>1 || innerWidth<=480)); // 小屏电脑预览也按手机画质来，别只认设备名字
+let qualityLevel=mobileDevice?1:0; // 手机默认用中档画质，电脑先用高档
+let drawCount=total; // 先把全部粒子都画出来
+function uploadParticles() { // 上传粒子数据时调用这里
+  // 降画质主要降分辨率，粒子不减，树才不会变稀
+  drawCount=total; // 画的数量还是全部粒子
+  gl.bindBuffer(gl.ARRAY_BUFFER,buffer); // 再选中存粒子的这块缓冲区
+  gl.bufferData(gl.ARRAY_BUFFER,particleData,gl.STATIC_DRAW); // 一次性上传数据，位置变化后面交给显卡去算
+} // 上传函数到这里
+uploadParticles(); // 刚打开先把数据上传一遍
+let offset=0; // 从每个粒子的第 0 个数开始读
+const attributes=[]; // 把属性的入口和偏移记下来，每帧还会用
+for(const [name,size] of [['aPosition',3],['aColor',3],['aSize',1],['aBrightness',1], // 按数据顺序列出位置、颜色、大小和亮度各占几个数
+                        ['aPhase',1],['aSpeed',1],['aKind',1]]) { // 后面还有相位、速度和类别，各占一个数
+  const location=gl.getAttribLocation(program,name); // 找到这个属性在显卡程序里的入口
+  gl.enableVertexAttribArray(location); // 打开这个属性入口
+  gl.vertexAttribPointer(location,size,gl.FLOAT,false,44,offset*4); // 每个粒子 44 字节，从当前偏移开始读，别把颜色读成位置了
+  attributes.push({location,size,offset:offset*4}); // 入口编号、长度、字节偏移都留着
+  offset+=size; // 偏移往后挪，准备读下一个属性
+} // 所有粒子属性都接好了
+const uniforms={}; // 每帧要传给显卡的参数入口，统一放这里
+for(const name of ['uTime','uAspect','uScale','uMaxSize','uPortrait','uScatter','uIce','uYaw','uTilt','uZoom','uHover','uPointer']) uniforms[name]=gl.getUniformLocation(program,name); // 把时间、聚散、配色、鼠标这些参数的入口都找出来
+gl.disable(gl.DEPTH_TEST); // 不做深度遮挡，星尘靠亮度叠起来
+gl.enable(gl.BLEND); // 打开混合，多个点重叠时才会发亮
+gl.blendFunc(gl.SRC_ALPHA,gl.ONE); // 当前点按透明度加到原颜色上，就是这种发光感
+gl.clearColor(0,0,0,1); // 每帧清屏先铺纯黑，背景不透明
+gl.uniform1f(uniforms.uMaxSize,gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE)[1]); // 把这块显卡允许的最大点大小告诉粒子程序
+
+// 接下来做柔光：把亮的部分取出来，再横着竖着模糊
+// 原来的清楚星尘还留着，模糊的光只是叠在外面
+const screenVertex=` // 柔光要画满屏幕，先备一个全屏四边形的顶点代码
+attribute vec2 aQuad; // 读进四边形的二维角点
+varying vec2 vUV; // 把纹理坐标传给后面的程序
+void main(){vUV=aQuad*.5+.5;gl_Position=vec4(aQuad,0.0,1.0);}`; // 角点直接铺满屏幕，同时算出对应的贴图位置
+const blurFragment=` // 下面是模糊用的片元代码
+precision mediump float; // 模糊算颜色，中等精度够用了
+uniform sampler2D uInput; // 要模糊的那张图从这里读
+uniform vec2 uStep; // 每次往旁边取样，要挪多少距离
+uniform float uThreshold; // 超过多亮才算进柔光，门槛从这里传进来
+varying vec2 vUV; // 接收当前像素对应的贴图位置
+vec3 sampleLight(vec2 uv) { // 从图里挑出够亮的部分
+  vec3 c=texture2D(uInput,uv).rgb; // 读这个位置原来的颜色
+  float level=max(c.r,max(c.g,c.b)); // 看红绿蓝哪个最亮，把它当亮度参考
+  return c*smoothstep(uThreshold,uThreshold+.20,level); // 太暗的去掉，够亮的留下，中间慢慢过渡
+} // 取亮部的函数写完了
+void main(){ // 每个像素的模糊计算从这里开始
+  vec3 c=sampleLight(vUV)*.227027; // 中间这个像素权重最大，先乘上它的分量
+  c+=(sampleLight(vUV+uStep)+sampleLight(vUV-uStep))*.1945946; // 再加左右或上下紧邻的两个位置
+  c+=(sampleLight(vUV+uStep*2.0)+sampleLight(vUV-uStep*2.0))*.1216216; // 第二圈再远一点，分量小一些
+  c+=(sampleLight(vUV+uStep*3.0)+sampleLight(vUV-uStep*3.0))*.054054; // 第三圈更远，分量继续小一些
+  c+=(sampleLight(vUV+uStep*4.0)+sampleLight(vUV-uStep*4.0))*.016216; // 第四圈只留一点点，让边缘软下来
+  gl_FragColor=vec4(c,1.0); // 输出这次模糊好的颜色
+}`; // 模糊的显卡代码写完了
+const compositeFragment=` // 下面把原图和模糊出来的光合在一起
+precision mediump float; // 合成颜色也是中等精度
+uniform sampler2D uScene; // 原来清楚的粒子画面从这里读
+uniform sampler2D uBloom; // 模糊好的柔光从这里读
+uniform float uIce; // 现在配色往冰蓝变了多少，也传进来
+varying vec2 vUV; // 接收当前像素在贴图上的位置
+void main(){ // 每个像素开始合成
+  vec3 base=texture2D(uScene,vUV).rgb; // 先读清楚的原图颜色
+  vec3 glow=clamp(texture2D(uBloom,vUV).rgb*mix(vec3(1.12,.78,.96),vec3(.83,.97,1.12),uIce),0.0,1.0); // 柔光跟着配色偏粉或偏蓝，颜色范围也卡在 0 到 1
+  float basePeak=max(base.r,max(base.g,base.b)); // 看原图这个位置最亮的通道有多亮
+  glow*=1.0-.22*smoothstep(.70,.98,basePeak); // 原来已经很亮的地方，柔光少加一点
+  vec3 combined=1.0-(1.0-base)*(1.0-glow); // 用滤色的方式叠光，亮起来但不直接硬加到一片白
+  // 特别亮的地方再收一点，保留粉色或蓝色的细节
+  float peak=max(combined.r,max(combined.g,combined.b)); // 找到合成后最亮的那个颜色通道
+  if(peak>.78) { // 超过 0.78 才开始压亮度，暗的地方不用动
+    float mapped=.78+.22*(1.0-exp(-(peak-.78)/.22)); // 用一条平滑曲线，把最亮的部分慢慢压住
+    combined*=mapped/peak; // 红绿蓝一起按比例压，别把原来的颜色比例弄坏
+  } // 特别亮的部分处理完了
+  gl_FragColor=vec4(combined,1.0); // 把最终颜色输出到屏幕，背景保持不透明
+}`; // 合成柔光的显卡代码写完了
+function postProgram(fragment,uniformNames) { // 模糊和合成都要新建程序，用这个函数省得写两遍
+  const p=gl.createProgram(); // 先新建一个显卡程序
+  const v=compile(gl.VERTEX_SHADER,screenVertex),f=compile(gl.FRAGMENT_SHADER,fragment); // 全屏顶点代码和这次的片元代码都编译好
+  gl.attachShader(p,v);gl.attachShader(p,f); // 把两段装进这个程序
+  gl.bindAttribLocation(p,0,'aQuad');gl.linkProgram(p); // 全屏四边形走第 0 号属性入口，再把程序接起来
+  gl.deleteShader(v);gl.deleteShader(f); // 接好后释放单独的着色器对象
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p)); // 程序没接成功，就带着错误停下来
+  return {program:p,uniforms:Object.fromEntries(uniformNames.map(n=>[n,gl.getUniformLocation(p,n)]))}; // 把程序和它需要的参数入口一起交回去
+} // 新建后期程序的函数到这里
+let blur,composite; // 先留好模糊程序和合成程序的位置
+try { // 这两个程序也可能初始化失败，接一下错误
+  blur=postProgram(blurFragment,['uInput','uStep','uThreshold']); // 建好模糊程序，找好输入图、取样步长和亮度门槛的入口
+  composite=postProgram(compositeFragment,['uScene','uBloom','uIce']); // 建好合成程序，找好原图、柔光图和配色的入口
+} catch(error) {fail('柔光渲染初始化失败：'+error.message);return;} // 没建好就显示具体错误，后面不用继续了
+const quad=gl.createBuffer(); // 再开一块缓冲区，放全屏四边形的角点
+gl.bindBuffer(gl.ARRAY_BUFFER,quad); // 选中这块角点缓冲区
+gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,1,1]),gl.STATIC_DRAW); // 四个角排成三角形带，刚好能铺满整个屏幕
+let targets=[]; // 三张中间画面先放这里，一会儿按窗口大小创建
+function renderTarget(width,height) { // 建一张能让显卡往上画的中间图
+  const texture=gl.createTexture(); // 新建一张贴图，后面拿它存颜色
+  gl.bindTexture(gl.TEXTURE_2D,texture); // 先选中这张二维贴图
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR); // 缩小时用线性取样，别看见一格一格的像素
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR); // 放大时也用线性取样，让柔光平滑一点
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE); // 横向取样超出边缘时，就停在边缘，不重复铺图
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE); // 纵向也一样，别把另一边的颜色绕过来
+  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,width,height,0,gl.RGBA,gl.UNSIGNED_BYTE,null); // 按给定宽高分配 RGBA 颜色空间，暂时没有初始画面
+  const framebuffer=gl.createFramebuffer(); // 新建一个帧缓冲，方便把画面画进贴图里
+  gl.bindFramebuffer(gl.FRAMEBUFFER,framebuffer); // 选中这个帧缓冲
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,texture,0); // 把刚才的贴图接上，画到这里的颜色就存进这张图
+  if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE) { // 检查贴图和帧缓冲是不是都能用
+    gl.deleteTexture(texture);gl.deleteFramebuffer(framebuffer); // 不能用就把刚才分配的资源清掉
+    throw new Error('无法分配图形缓冲区'); // 把分配失败的错误交给外面显示
+  } // 中间图出错的情况处理完了
+  return {texture,framebuffer,width,height}; // 把贴图、帧缓冲和尺寸一起交回去
+} // 创建中间图的函数到这里
+function useTarget(target) { // 这次要往哪张图上画，就调用这里切换
+  gl.bindFramebuffer(gl.FRAMEBUFFER,target?target.framebuffer:null); // 有目标就画进中间图，没有目标就画回屏幕
+  gl.viewport(0,0,target?target.width:canvas.width,target?target.height:canvas.height); // 绘制范围也改成那张图的大小
+} // 切换绘制目标的函数到这里
+function useTexture(unit,texture) { // 让程序从指定编号的纹理位读取一张图
+  gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,texture); // 先选纹理位，再把要读的贴图绑上去
+} // 切换输入贴图的函数到这里
+function resize() { // 窗口大小变了，画布和中间图都得重算
+  const box=scene.getBoundingClientRect(); // 先读场景在页面里的实际大小
+  const limit=qualityLevel===2?.85:mobileDevice?1.5:1.5; // 手机上最多按 1.5 倍像素画，发热时再自动降下来
+  const dpr=Math.min(devicePixelRatio||1,limit,Math.sqrt((mobileDevice?1800000:4200000)/Math.max(box.width*box.height,1))); // 平板再大也限制总像素，别按三倍屏幕分辨率硬画
+  canvas.width=Math.max(1,Math.round(box.width*dpr)); // 算画布实际像素宽度，最少也留 1 像素
+  canvas.height=Math.max(1,Math.round(box.height*dpr)); // 高度也一样，不能是 0
+  gl.useProgram(program); // 先切回粒子程序，下面要给它更新参数
+  gl.uniform1f(uniforms.uAspect,canvas.width/canvas.height); // 告诉显卡新的宽高比，树不会跟着窗口变胖变瘦
+  gl.uniform1f(uniforms.uPortrait,box.width/box.height<=.8?1:0); // 宽高比不超过 0.8 就按竖屏处理
+  gl.uniform1f(uniforms.uScale,canvas.height/720); // 粒子大小以 720 像素高为参考，分辨率变化时一起缩放
+  for(const target of targets) { // 旧的中间图先一张张收掉
+    gl.deleteTexture(target.texture);gl.deleteFramebuffer(target.framebuffer); // 释放旧贴图和帧缓冲，别每次改窗口都多占显存
+  } // 旧资源清完了
+  targets=[]; // 把旧目标列表也清空
+  try { // 新图可能分配失败，这里接一下错误
+    const divisor=[2,3,4][qualityLevel]; // 高、中、低画质的柔光图分别缩到原图的二分之一、三分之一、四分之一
+    const bw=Math.max(1,Math.round(canvas.width/divisor)),bh=Math.max(1,Math.round(canvas.height/divisor)); // 算柔光图的新宽高，最少保留 1 像素
+    targets=[renderTarget(canvas.width,canvas.height),renderTarget(bw,bh),renderTarget(bw,bh)]; // 一张全尺寸原图，两张小尺寸柔光图，正好三张
+  } catch(error) {fail(error.message);} // 分配失败就把错误显示到页面上
+} // 重算尺寸的函数到这里
+if(typeof ResizeObserver!=='undefined')new ResizeObserver(resize).observe(scene); // 浏览器支持就跟着场景大小自动重算
+window.addEventListener('resize',resize,{passive:true}); // 横竖屏切换也重新安排画布
+window.visualViewport?.addEventListener('resize',resize,{passive:true}); // 手机地址栏收起展开时，画布高度也跟上
+resize(); // 刚打开时也先算一遍
+const started=performance.now(); // 记住开始时间，后面算动画时间和帧率
+let frames=0, currentTime=0, raf=0, lost=false; // 记总帧数、动画秒数、下一帧编号和显卡是否断开
+let lastDraw=0,lastTime=started,windowStart=started,windowFrames=0,slowWindows=0,recentFps=0; // 上次画图时间和最近一段的帧率统计，也都先记好
+function render(now) { // 每一帧要画的东西都在这个函数里
+  raf=0; // 这一帧已经进来了，先清掉等待中的编号
+  if(document.hidden)return; // 页面切到后台了就先不画，省点资源
+  if(lost || targets.length!==3) return; // 显卡掉了或者中间图没建好，也先不画
+  raf=requestAnimationFrame(render); // 先约好下一帧，再往下画这一帧
+  const elapsed=now-lastDraw; // 看看离上次真正画图隔了多久
+  if(elapsed<1000/60)return; // 没到六十分之一秒就跳过，最多按每秒 60 帧画
+  lastDraw=now-elapsed%(1000/60); // 记住这次绘制的时间，余下零头留给下一帧
+  const dt=Math.min((now-lastTime)/1000,.10);lastTime=now; // 算这一帧走了多少秒，卡顿时最多按 0.1 秒算，别一下跳太远
+  currentTime+=dt; // 把这段时间加进动画总时间
+  scatter+=(targetScatter-scatter)*(1.0-Math.exp(-dt*2.25)); // 当前聚散进度慢慢追上目标，按实际秒数算，快慢机器都差不多
+  ice+=(targetIce-ice)*(1.0-Math.exp(-dt*4.0)); // 颜色也慢慢追上目标，切配色不会突然跳一下
+  hover+=(targetHover-hover)*(1.0-Math.exp(-dt*5.0)); // 鼠标推开的强度也慢慢变，移进移出都柔和一点
+  const [base,horizontal,vertical]=targets; // 拿出原图、横向模糊图和纵向模糊图
+  useTarget(base); // 先把粒子画到原图里
+  gl.useProgram(program); // 选中粒子程序
+  gl.bindBuffer(gl.ARRAY_BUFFER,buffer); // 选中粒子数据缓冲区
+  for(const a of attributes) { // 把粒子的各个属性入口重新接上
+    gl.enableVertexAttribArray(a.location); // 打开这个属性入口
+    gl.vertexAttribPointer(a.location,a.size,gl.FLOAT,false,44,a.offset); // 按 44 字节一个粒子的顺序，接上它对应的数据
+  } // 粒子属性接好了
+  gl.enable(gl.BLEND); // 画粒子时打开加色混合，星尘重叠才会亮
+  gl.uniform1f(uniforms.uTime,currentTime); // 把当前动画时间传给显卡
+  gl.uniform1f(uniforms.uScatter,scatter); // 把现在的聚散进度传进去
+  gl.uniform1f(uniforms.uIce,ice); // 把现在的配色进度传进去
+  gl.uniform1f(uniforms.uYaw,yaw); // 把左右拖动的角度传进去
+  gl.uniform1f(uniforms.uTilt,tilt); // 把上下倾斜的角度传进去
+  gl.uniform1f(uniforms.uZoom,zoom); // 把缩放倍数传进去
+  gl.uniform1f(uniforms.uHover,hover); // 把鼠标避让的强度传进去
+  gl.uniform2f(uniforms.uPointer,pointerX,pointerY); // 把鼠标的横纵位置一起传进去
+  gl.clear(gl.COLOR_BUFFER_BIT); // 先把上一帧清掉，背景回到黑色
+  gl.drawArrays(gl.POINTS,0,drawCount); // 一次把所有粒子画出来，位置和闪烁都由显卡各自算
+  gl.disable(gl.BLEND); // 粒子画完了，后面做整张图时先关掉加色混合
+  for(const a of attributes) if(a.location!==0) gl.disableVertexAttribArray(a.location); // 其他粒子属性先关掉，后面全屏四边形只用第 0 号入口
+  gl.bindBuffer(gl.ARRAY_BUFFER,quad); // 换成全屏四边形的角点缓冲区
+  gl.vertexAttribPointer(0,2,gl.FLOAT,false,0,0); // 第 0 号入口现在读两个数，作为四边形的二维角点
+  gl.useProgram(blur.program); // 换成模糊程序
+  gl.uniform1i(blur.uniforms.uInput,0); // 告诉模糊程序，输入图放在第 0 号纹理位
+  useTarget(horizontal);useTexture(0,base.texture); // 先往横向模糊图上画，读的是刚画好的原图
+  gl.uniform2f(blur.uniforms.uStep,3.6/canvas.width,0); // 取样只往左右走，上下先不动
+  gl.uniform1f(blur.uniforms.uThreshold,.10); // 先把很暗的部分过滤掉，只让亮部发光
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4); // 画一遍全屏四边形，横向模糊图就出来了
+  useTarget(vertical);useTexture(0,horizontal.texture); // 再往纵向模糊图上画，输入换成刚才横向模糊的结果
+  gl.uniform2f(blur.uniforms.uStep,0,3.6/canvas.height); // 这次只往上下取样
+  gl.uniform1f(blur.uniforms.uThreshold,-.25); // 第二遍不再挑高亮，前面模糊开的光也要留下
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4); // 再画一遍，全方向的柔光就出来了
+  useTarget(null); // 中间图都做完，最后画回屏幕
+  gl.useProgram(composite.program); // 换成原图加柔光的合成程序
+  useTexture(0,base.texture);useTexture(1,vertical.texture); // 原图放第 0 号纹理位，柔光图放第 1 号
+  gl.uniform1i(composite.uniforms.uScene,0); // 告诉合成程序去第 0 号读取原图
+  gl.uniform1i(composite.uniforms.uBloom,1); // 告诉合成程序去第 1 号读取柔光
+  gl.uniform1f(composite.uniforms.uIce,ice); // 柔光颜色也按当前冰蓝进度来
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,4); // 合成后画满屏幕，这一帧就能看见了
+  frames++; // 总共画过的帧数加一
+  windowFrames++; // 最近这段时间的帧数也加一
+  if(now-windowStart>=3000) { // 每隔大约 3 秒，看一下实际跑得快不快
+    recentFps=windowFrames*1000/(now-windowStart); // 用这段真正画出的帧数除以时间，算最近帧率
+    slowWindows=recentFps<38?slowWindows+1:0; // 不足 38 帧就记一次慢，恢复了就清零
+    windowFrames=0;windowStart=now; // 这一段统计完了，下一段重新记
+    // 连续两段都慢才降画质，偶尔卡一下先别动
+    if(slowWindows>=2 && qualityLevel<2) { // 已经连续慢两次，而且还不是最低画质，就降一档
+      qualityLevel++;slowWindows=0;resize(); // 降一档、清掉慢速记录，再按新画质重建画布和柔光图
+    } // 这一轮降画质处理完了
+  } // 最近帧率统计完了
+} // 这一帧要做的事到这里
+raf=requestAnimationFrame(render); // 第一次把动画叫起来，后面每帧自己接着约下一帧
+canvas.addEventListener('webglcontextlost',event=>{ // 显卡绘图环境丢了时，先停下来
+  event.preventDefault(); lost=true; cancelAnimationFrame(raf); // 允许后面恢复，记下暂时不能画，再取消下一帧
+  fail('图形设备暂时不可用，恢复后画面将自动重新加载。'); // 把暂时不可用的提示放出来
+}); // 显卡断开的处理到这里
+canvas.addEventListener('webglcontextrestored',()=>location.reload()); // 显卡环境恢复后重新加载，把数据和程序再建一遍
+document.addEventListener('visibilitychange',()=>{ // 页面从前台切后台，或者切回来时走这里
+  cancelAnimationFrame(raf);raf=0; // 先取消原来约好的下一帧，免得开出两个动画循环
+  lastTime=performance.now();lastDraw=0;windowStart=lastTime;windowFrames=0;slowWindows=0; // 时间和最近帧率重新计，别把切后台那段算成卡顿
+  if(!document.hidden && !lost && targets.length===3)raf=requestAnimationFrame(render); // 页面可见、显卡正常、三张图都在，就继续画
+}); // 前后台切换的处理到这里
+
+// 留个检查入口，看粒子数和帧率用，不往页面上加东西
+window.christmasScene={ // 把检查入口挂在 window 上，控制台里能直接找到
+  stats:()=>({particles:total,renderedParticles:drawCount,quality:['high','balanced','low'][qualityLevel], // 调 stats() 时，先返回粒子总数、绘制数量和画质档位
+    mobileDevice,particleStyle:'flowing-interactive-stardust',mode:targetScatter?'scattered':'tree',scatterProgress:scatter,theme:targetIce?'ice':'pink',paused:document.hidden,frameLimit:60,recentFps,counts:{...counts},frames,seconds:currentTime, // 再返回设备、聚散、配色、暂停状态、帧率和各种粒子的数量
+    averageFps:frames/Math.max(currentTime,.001),rotationPeriod:26, // 总帧数除以动画时间就是平均帧率，树身旋转周期也一起写上
+    zoom,yaw,tilt,activePointers:fingers.size,version:'mobile-ipad-v1',width:canvas.width,height:canvas.height,webglError:gl.getError()}) // 最后带上画布大小和 WebGL 错误码，0 表示当前没有错误
+}; // 检查入口写完了
+
+scene.addEventListener('dblclick',async()=>{ // 双击场景，可以进入或退出全屏
+  try { // 全屏有可能被浏览器拦下，先接一下
+    if(matchMedia('(pointer:coarse)').matches)return; // 触屏不接双击全屏，手指点两次也不会抢走画面
+    if(document.fullscreenElement) await document.exitFullscreen(); // 电脑已经全屏时再双击就退出
+    else if(!matchMedia('(pointer:coarse)').matches && scene.requestFullscreen) await scene.requestFullscreen(); // 触屏双击留给轻点聚散，不额外弹全屏
+  } catch(error) { console.info('可按 F11 进入全屏。',error); } // 浏览器不让进的话，在控制台提示也能按 F11
+}); // 双击全屏的处理到这里
+let cursorTimer; // 留着鼠标隐藏倒计时的编号，移动时还要取消它
+function cursor() { // 鼠标动起来时，先显示箭头，再重新计时
+  document.body.classList.remove('idle'); // 去掉 idle 这个样式，箭头就回来了
+  clearTimeout(cursorTimer); // 取消上次那个隐藏倒计时
+  cursorTimer=setTimeout(()=>document.body.classList.add('idle'),2200); // 2.2 秒不动就加上 idle，让鼠标箭头藏起来
+} // 鼠标显示和隐藏的函数到这里
+window.addEventListener('pointermove',cursor,{passive:true}); // 鼠标一动就重新计时，这里不拦浏览器默认操作
+cursor(); // 刚打开也先启动这次倒计时
+
+})(); // 外面包的函数到这里结束，马上执行一遍，把树画起来
+</script> <!-- 动画脚本写完了 -->
+</body> <!-- 页面内容到这里结束 -->
+</html> <!-- 整份网页到这里结束 -->
